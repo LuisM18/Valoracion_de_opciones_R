@@ -1,0 +1,280 @@
+---
+title: "VALORACIÓN DE OPCIONES FINANCIERAS"
+author: "Luis Miguel Vargas"
+output_file: Valoracion_Opciones.html
+output: html_document
+---
+
+```{r Cargar librerias,include=FALSE}
+library(quantmod)
+library(fOptions)
+```
+
+## **1.Cargar datos de precio del activo subyacente** 
+
+```{r datos,include=TRUE}
+getSymbols("AAPL",src='yahoo',
+            return.class='data.frame',
+            from="2013-01-01",
+            to ="2023-12-31",
+            periodicity = "daily" )
+price = as.numeric(as.character(unlist(AAPL["AAPL.Close"])))
+vol = sd(diff(log(price)))*sqrt(262)
+
+p = 5
+r = 10.0
+delta= 0.6/p
+k = price[length(price)]+2
+
+rr= exp((r/100)*delta)
+up= exp(vol*sqrt(delta))                    
+down=1/up  
+pp= (rr-down)/(up-down)
+pq=1-pp
+
+```
+
+#### **Arbol del activo subyacente**
+```{r arbol subyacente,echo=FALSE,results='asis'}
+tree = matrix(nrow=p+1,ncol=p+1,byrow=T) 
+  tree[1,1]= price[length(price)] 
+  for(i in 2:ncol(tree)){tree[1,i]=up*tree[1,i-1]}
+  
+  for(i in 2:nrow(tree))
+  {
+    for(j in 2:ncol(tree))
+    {
+      if(is.na(tree[i,j-1]))
+      {
+        tree[i,j]=down*tree[i-1,j-1]
+      }
+      else
+      {
+        tree[i,j]=up*tree[i,j-1]
+      }
+    } 
+  } 
+print(xtable::xtable(tree),
+       type = "html", html.table.attributes = "border=1")
+
+```
+
+#### **Call Europea**
+
+```{r arbol call europea,echo=FALSE,results='asis'}
+
+call_europea = matrix(nrow=nrow(tree),ncol=ncol(tree),byrow=T)
+for(i in 1:(nrow(call_europea))){
+    call_europea[i,ncol(call_europea)]= max((tree[i,ncol(tree)])-k,0)
+  }
+
+for(j in (ncol(call_europea)-1):1)
+  {
+    for(i in 1:(nrow(call_europea)-1))
+    {
+      call_europea[i,j]= (call_europea[i,j+1]*pp+call_europea[i+1,j+1]*pq)/rr  
+      }
+   }
+print(xtable::xtable(call_europea),
+       type = "html", html.table.attributes = "border=1")
+
+```
+
+#### **Put Europea**
+```{r arbol put europea,echo=FALSE,results='asis' }
+put_europea = matrix(nrow=nrow(tree),ncol=ncol(tree),byrow=T)
+for(i in 1:(nrow(put_europea))){
+    put_europea[i,ncol(put_europea)]= max(k-(tree[i,ncol(tree)]),0)
+  }
+
+for(j in (ncol(put_europea)-1):1)
+  {
+    for(i in 1:(nrow(put_europea)-1))
+    {
+      put_europea[i,j]= (put_europea[i,j+1]*pp+put_europea[i+1,j+1]*pq)/rr  
+      }
+   }
+print(xtable::xtable(put_europea),
+       type = "html", html.table.attributes = "border=1")
+
+```
+
+#### **Call Americana**
+```{r arbol call americana,echo=FALSE,results='asis' }
+call_americana = matrix(nrow=nrow(tree),ncol=ncol(tree),byrow=T)
+for(i in 1:(nrow(call_americana))){
+    call_americana[i,ncol(call_americana)]= max((tree[i,ncol(tree)])-k,0)
+  }
+
+for(j in (ncol(call_americana)-1):1)
+  {
+    for(i in 1:(nrow(call_americana)-1))
+    {
+      call_americana[i,j]= max(tree[i,j]-k,(call_americana[i,j+1]*pp+call_americana[i+1,j+1]*pq)/rr) 
+      }
+   }
+print(xtable::xtable(call_americana),
+       type = "html", html.table.attributes = "border=1")
+```
+
+#### **Put Americana**
+```{r arbol put americana,echo=FALSE,results='asis'}
+put_americana = matrix(nrow=nrow(tree),ncol=ncol(tree),byrow=T)
+for(i in 1:(nrow(put_americana))){
+    put_americana[i,ncol(put_americana)]= max(k-(tree[i,ncol(tree)]),0)
+  }
+
+for(j in (ncol(put_americana)-1):1)
+  {
+    for(i in 1:(nrow(put_americana)-1))
+    {
+      put_americana[i,j]= max(k-tree[i,j],(put_americana[i,j+1]*pp+put_americana[i+1,j+1]*pq)/rr) 
+      }
+   }
+print(xtable::xtable(put_americana),
+       type = "html", html.table.attributes = "border=1")
+```
+
+
+
+## **2.Cálculos de Volatilidad**
+### **Volatilidad historica**
+
+Para el subyacente Tesla(TSLA) en el periodo entre 2018-01-01 y 2023-12-31 
+```{r volatilidadh,include=T}
+getSymbols("TSLA",src='yahoo',
+            return.class='data.frame',
+            from="2013-01-01",
+            to ="2023-12-31",
+            periodicity = "daily" )
+precio = as.numeric(as.character(unlist(TSLA["TSLA.Close"])))
+volatilidad = sd(diff(log(price)))*sqrt(262)
+```
+**La volatilidad histórica anualizada es** ``r volatilidad``
+
+### **Volatilidad implicita** 
+
+Para una opción con las siguientes caracteristicas:
+
+Spot: 50
+
+Strike: 60
+
+Tiempo(años): 0.6
+
+Tasa libre de riesgo: 0.12
+
+Pasos para la valoración: 3
+
+Precio de la opcion en el mercado: 5.2
+
+
+```{r volatilidadi,echo=T}
+vi= function(vol){(Call_e= BinomialTreeOption(TypeFlag = "ce",S= 50,X=60,Time = 0.6,r = 0.12,b =0.1,sigma = vol,n=3))[1,1]
+}
+
+precio = 5.2
+error_esperado = 0.05
+error =1.0
+xl= 0.0001
+xu = 3.0
+xr =0.0
+
+while(error>error_esperado){
+xa=xr
+fxl = precio - vi(xl)
+fxu = precio - vi(xu)
+xr=(xu+xl)/2
+fxr = precio - vi(xr)
+error = abs((xu-xl)/(xu+xl))*100
+if((fxl*fxr)>0){
+  xl=xr} else {
+    xu=xr}
+}
+
+```
+
+**La volatilidad implicita es** ``r xr``
+
+## **4.Arboles de opciones con fOptions**
+
+
+
+```{r Opciones,include=FALSE}
+
+Call_e= BinomialTreeOption(TypeFlag = "ce",S = 50,X = 50,
+                              Time = 0.5,r = 0.08, b =0.1, sigma = 0.3 , n=5)
+
+Put_e= BinomialTreeOption(TypeFlag = "pe",S = 50,X = 50,
+                              Time = 0.5,r = 0.08, b =0.1, sigma = 0.3 , n=5)
+
+Call_a= BinomialTreeOption(TypeFlag = "ca",S = 50,X = 50,
+                              Time = 0.5,r = 0.08, b =0.1, sigma = 0.3 , n=5)
+
+Put_a= BinomialTreeOption(TypeFlag = "pa",S = 50,X = 50,
+                              Time = 0.5,r = 0.08, b =0.1, sigma = 0.3 , n=5)
+
+```
+
+#### Call Europea
+```{r Call Europea,echo=FALSE}
+BinomialTreePlot(Call_e, dy = 1,cex = 0.8,ylim =c(-6,6),
+                 xlab ="Pasos",ylab="Valor Opción")
+
+```
+
+#### Put Europea
+```{r Put Europea,echo=FALSE}
+BinomialTreePlot(Put_e, dy = 1,cex = 0.8,ylim =c(-6,6),
+                 xlab ="Pasos",ylab="Valor Opción")
+
+```
+
+#### Call Americana
+```{r Call Americana,echo=FALSE}
+BinomialTreePlot(Call_a, dy = 1,cex = 0.8,ylim =c(-6,6),
+                 xlab ="Pasos",ylab="Valor Opción")
+
+```
+
+#### Put Americana
+```{r Put Americana,echo=FALSE}
+BinomialTreePlot(Put_a, dy = 1,cex = 0.8,ylim =c(-6,6),
+                 xlab ="Pasos",ylab="Valor Opción")
+```
+
+## **Valor Presente de las opciones financieras**
+
+Para opción con:
+
+Valor intrinseco: 50
+
+Tasa libre de riesgo: 8%
+
+Tiempo: 6 meses
+```{r Valor Presente Europea,include=T}
+VP = function(valor,tasa,tiempo){
+  vp = valor*exp(-tasa*tiempo)
+  return(vp)
+}
+VP_E = VP(50,0.08,0.5)
+
+```
+
+#### **Valor presente europea:** `r VP_E`
+
+#### **Valor presente americana**
+```{r Valor Presente Americana,echo=T,results='asis'}
+opcion = BinomialTreeOption(TypeFlag = "pa",S = 50,X = 50,
+                              Time = 0.5,r = 0.08, b =0.1, sigma = 0.3 , n=5) 
+vp = matrix(nrow=nrow(opcion),ncol=ncol(opcion),byrow=T)
+  for (i in 1:nrow(opcion)){
+    for(j in 1:ncol(opcion)){
+      vp[i,j]= VP(opcion[i,j],0.08,0.5)
+    }
+  }
+print(DT::datatable(vp),
+       type = "html", html.table.attributes = "border=1")
+```
+
+
